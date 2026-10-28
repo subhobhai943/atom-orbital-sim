@@ -9,3 +9,4 @@ bin/shaders/
 *.a
 *.so
 .DS_Store
+imgui.ini

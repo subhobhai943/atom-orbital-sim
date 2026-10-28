@@ -60,15 +60,156 @@ void Gui::newFrame() {
     ImGui::NewFrame();
 }
 
+static void toggleFullscreenHelper(GLFWwindow* window, orbital::SimulationSettings& settings) {
+    static int savedX = 100, savedY = 100, savedW = 1280, savedH = 800;
+    settings.is_fullscreen = !settings.is_fullscreen;
+    if (settings.is_fullscreen) {
+        glfwGetWindowPos(window, &savedX, &savedY);
+        glfwGetWindowSize(window, &savedW, &savedH);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        if (monitor) {
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        }
+    } else {
+        glfwSetWindowMonitor(window, nullptr, savedX, savedY, savedW, savedH, 0);
+    }
+}
+
+void Gui::renderHiddenHudOverlay(SimulationSettings& settings, float fps) {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // 1. Top-Left Floating Action Buttons
+    ImGui::SetNextWindowPos(ImVec2(15, 15), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.40f);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                             ImGuiWindowFlags_NoNav;
+
+    if (ImGui::Begin("##HiddenPill", nullptr, flags)) {
+        if (ImGui::Button(" ⚙ Show Controls (TAB) ")) {
+            settings.show_gui = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(settings.is_fullscreen ? " 🗗 Windowed " : " ⛶ Fullscreen (F11) ")) {
+            toggleFullscreenHelper(glfwGetCurrentContext(), settings);
+        }
+    }
+    ImGui::End();
+
+    // 2. Bottom Status Bar Overlay
+    ImGui::SetNextWindowPos(ImVec2(15, io.DisplaySize.y - 42), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.35f);
+    if (ImGui::Begin("##BottomBadge", nullptr, flags)) {
+        std::string name = orbital_name(settings.n, settings.l, settings.m, settings.use_real_orbitals);
+        double energy = energy_level_ev(settings.n);
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "⚛ %s", name.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("|  En: %.2f eV  |  FPS: %.0f  |  [TAB/H] Controls  |  [F11] Fullscreen  |  [1-5] Modes  |  [Space] Auto-Orbit", energy, fps);
+    }
+    ImGui::End();
+}
+
+void Gui::renderMiniHud(SimulationSettings& settings, ParticleRenderer& particleRenderer, GLFWwindow* window, float fps) {
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 46), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.60f);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
+
+    if (ImGui::Begin("##TopMiniHud", nullptr, flags)) {
+        std::string name = orbital_name(settings.n, settings.l, settings.m, settings.use_real_orbitals);
+        double energy = energy_level_ev(settings.n);
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.4f, 1.0f), "⚛ %s (%.2feV)", name.c_str(), energy);
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+
+        // Mode buttons
+        const char* modeLabels[] = {"1.Cloud", "2.Raymarch", "3.Jumps", "4.2D Slice", "5.Bohr"};
+        for (int i = 0; i < 5; ++i) {
+            bool active = (static_cast<int>(settings.mode) == i);
+            if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.55f, 0.90f, 0.9f));
+            if (ImGui::Button(modeLabels[i])) {
+                settings.mode = static_cast<SimulationMode>(i);
+                if (settings.mode == SimulationMode::ParticleCloud3D) {
+                    particleRenderer.generateParticles(settings);
+                }
+            }
+            if (active) ImGui::PopStyleColor();
+            ImGui::SameLine();
+        }
+
+        ImGui::TextDisabled("| Presets:");
+        ImGui::SameLine();
+        auto miniPreset = [&](int n, int l, int m, const char* label) {
+            if (ImGui::Button(label)) {
+                settings.setOrbital(n, l, m);
+                if (settings.mode == SimulationMode::ParticleCloud3D) {
+                    particleRenderer.generateParticles(settings);
+                }
+            }
+            ImGui::SameLine();
+        };
+        miniPreset(1, 0, 0, "1s");
+        miniPreset(2, 0, 0, "2s");
+        miniPreset(2, 1, 0, "2pz");
+        miniPreset(3, 2, 0, "3dz²");
+
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+
+        if (ImGui::Button("⚙ Full Panel")) {
+            settings.mini_hud_mode = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(settings.is_fullscreen ? "🗗" : "⛶ Fullscreen (F11)")) {
+            toggleFullscreenHelper(window, settings);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("✕ Hide (TAB)")) {
+            settings.show_gui = false;
+        }
+    }
+    ImGui::End();
+}
+
 void Gui::render(SimulationSettings& settings,
                  ArcballCamera& camera,
                  ParticleRenderer& particleRenderer,
                  ExcitationRenderer& excitationRenderer,
-                 float fps) {
+                 float fps,
+                 GLFWwindow* window) {
+    if (!settings.show_gui) {
+        renderHiddenHudOverlay(settings, fps);
+        return;
+    }
+
+    if (settings.mini_hud_mode) {
+        renderMiniHud(settings, particleRenderer, window, fps);
+        return;
+    }
+
     ImGui::SetNextWindowPos(ImVec2(15, 15), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(390, 720), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(410, 740), ImGuiCond_FirstUseEver);
 
     if (ImGui::Begin("Quantum Hydrogen Atom Simulator", nullptr, ImGuiWindowFlags_NoCollapse)) {
+        // Quick Action Bar: Fullscreen, Mini-HUD, Hide
+        if (ImGui::Button(settings.is_fullscreen ? " 🗗 Windowed " : " ⛶ Fullscreen (F11) ")) {
+            toggleFullscreenHelper(window, settings);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(" ▾ Mini-Bar HUD ")) {
+            settings.mini_hud_mode = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(" ✕ Hide Panel (TAB) ")) {
+            settings.show_gui = false;
+        }
+
+        ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "Schrodinger Orbital Visualizer");
         ImGui::TextDisabled("FPS: %.1f | Particles: %d", fps, particleRenderer.getActualCount());
         ImGui::Separator();

@@ -25,11 +25,14 @@ public:
                 ArcballCamera& camera,
                 ParticleRenderer& particleRenderer,
                 ExcitationRenderer& excitationRenderer,
-                float fps);
+                float fps,
+                GLFWwindow* window);
     void draw();
     void shutdown();
 
 private:
+    void renderMiniHud(SimulationSettings& settings, ParticleRenderer& particleRenderer, GLFWwindow* window, float fps);
+    void renderHiddenHudOverlay(SimulationSettings& settings, float fps);
     void renderModeSelection(SimulationSettings& settings, ParticleRenderer& particleRenderer);
     void renderOrbitalControls(SimulationSettings& settings, ParticleRenderer& particleRenderer);
     void renderPresets(SimulationSettings& settings, ParticleRenderer& particleRenderer);

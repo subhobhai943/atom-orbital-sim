@@ -19,6 +19,26 @@ static orbital::SimulationSettings* g_settings = nullptr;
 static orbital::ParticleRenderer* g_particleRenderer = nullptr;
 static int g_windowWidth = 1280;
 static int g_windowHeight = 800;
+static bool g_isFullscreen = false;
+static int g_savedWindowX = 100, g_savedWindowY = 100;
+static int g_savedWindowW = 1280, g_savedWindowH = 800;
+
+static void toggleFullscreen(GLFWwindow* window) {
+    g_isFullscreen = !g_isFullscreen;
+    if (g_settings) g_settings->is_fullscreen = g_isFullscreen;
+
+    if (g_isFullscreen) {
+        glfwGetWindowPos(window, &g_savedWindowX, &g_savedWindowY);
+        glfwGetWindowSize(window, &g_savedWindowW, &g_savedWindowH);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        if (monitor) {
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        }
+    } else {
+        glfwSetWindowMonitor(window, nullptr, g_savedWindowX, g_savedWindowY, g_savedWindowW, g_savedWindowH, 0);
+    }
+}
 
 static void framebufferSizeCallback(GLFWwindow* /*window*/, int width, int height) {
     g_windowWidth = width;
@@ -62,6 +82,10 @@ static void keyCallback(GLFWwindow* window, int key, int /*scancode*/, int actio
     if (action == GLFW_PRESS) {
         if (key == GLFW_KEY_ESCAPE) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
+        } else if (key == GLFW_KEY_F11 || key == GLFW_KEY_F) {
+            toggleFullscreen(window);
+        } else if (key == GLFW_KEY_TAB || key == GLFW_KEY_H) {
+            if (g_settings) g_settings->show_gui = !g_settings->show_gui;
         } else if (key == GLFW_KEY_R && g_camera) {
             g_camera->reset(45.0f);
         } else if (key == GLFW_KEY_SPACE && g_camera) {
@@ -174,7 +198,9 @@ int main(int argc, char** argv) {
     float fpsTimer = 0.0f;
     int frameCounter = 0;
 
-    std::cout << "\nReady! Use GUI on left or shortcuts:\n"
+    std::cout << "\nReady! Controls:\n"
+              << "  [F11] or [F]: Toggle Fullscreen\n"
+              << "  [TAB] or [H]: Toggle / Hide Control Panel (100% Unobstructed Fullscreen)\n"
               << "  [1-5]: Switch Simulation Modes\n"
               << "  [R]: Reset Camera Orbit\n"
               << "  [Space]: Toggle Auto-Rotation\n"
@@ -251,7 +277,7 @@ int main(int argc, char** argv) {
 
         // GUI Pass
         gui.newFrame();
-        gui.render(settings, camera, particleRenderer, excitationRenderer, fps);
+        gui.render(settings, camera, particleRenderer, excitationRenderer, fps, window);
         gui.draw();
 
         glfwSwapBuffers(window);

@@ -43,6 +43,11 @@ struct SimulationSettings {
     bool show_nucleus = true;
     float nucleus_scale = 1.0f;
 
+    // UI visibility & Fullscreen modes
+    bool show_gui = true;
+    bool mini_hud_mode = false;
+    bool is_fullscreen = false;
+
     // Volumetric Raymarcher settings
     int ray_steps = 96;
     float volume_density = 2.5f;
