@@ -182,6 +182,9 @@ You can also run any standalone focused mode directly:
 
 | Action | Control |
 |---|---|
+| **Toggle True Fullscreen** | `F11` or `F` (fills 100% of your monitor) |
+| **Instant Hide/Show Control Panel** | `TAB` or `H` (leaves 100% unobstructed edge-to-edge view) |
+| **Switch to Minimal Top-Bar HUD** | Click `▾ Mini-Bar HUD` button in GUI |
 | **Orbit Camera** | Left Mouse Button + Drag |
 | **Pan Camera** | Right Mouse Button + Drag |
 | **Zoom View** | Mouse Scroll Wheel |
