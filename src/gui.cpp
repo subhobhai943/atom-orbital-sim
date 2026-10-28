@@ -110,7 +110,7 @@ void Gui::renderHiddenHudOverlay(SimulationSettings& settings, float fps) {
     ImGui::End();
 }
 
-void Gui::renderMiniHud(SimulationSettings& settings, ParticleRenderer& particleRenderer, GLFWwindow* window, float fps) {
+void Gui::renderMiniHud(SimulationSettings& settings, ParticleRenderer& particleRenderer, ExcitationRenderer& excitationRenderer, GLFWwindow* window, float fps) {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 46), ImGuiCond_Always);
@@ -136,6 +136,8 @@ void Gui::renderMiniHud(SimulationSettings& settings, ParticleRenderer& particle
                 settings.mode = static_cast<SimulationMode>(i);
                 if (settings.mode == SimulationMode::ParticleCloud3D) {
                     particleRenderer.generateParticles(settings);
+                } else if (settings.mode == SimulationMode::QuantumExcitation) {
+                    excitationRenderer.ensureInitialized(settings);
                 }
             }
             if (active) ImGui::PopStyleColor();
@@ -188,7 +190,7 @@ void Gui::render(SimulationSettings& settings,
     }
 
     if (settings.mini_hud_mode) {
-        renderMiniHud(settings, particleRenderer, window, fps);
+        renderMiniHud(settings, particleRenderer, excitationRenderer, window, fps);
         return;
     }
 
@@ -214,7 +216,7 @@ void Gui::render(SimulationSettings& settings,
         ImGui::TextDisabled("FPS: %.1f | Particles: %d", fps, particleRenderer.getActualCount());
         ImGui::Separator();
 
-        renderModeSelection(settings, particleRenderer);
+        renderModeSelection(settings, particleRenderer, excitationRenderer);
 
         if (ImGui::CollapsingHeader("Quantum Numbers (n, l, m)", ImGuiTreeNodeFlags_DefaultOpen)) {
             renderOrbitalControls(settings, particleRenderer);
@@ -243,7 +245,7 @@ void Gui::render(SimulationSettings& settings,
     ImGui::End();
 }
 
-void Gui::renderModeSelection(SimulationSettings& settings, ParticleRenderer& particleRenderer) {
+void Gui::renderModeSelection(SimulationSettings& settings, ParticleRenderer& particleRenderer, ExcitationRenderer& excitationRenderer) {
     ImGui::Text("Simulation Mode:");
     const char* modes[] = {
         "1. 3D Electron Cloud (Point Cloud)",
@@ -258,6 +260,8 @@ void Gui::renderModeSelection(SimulationSettings& settings, ParticleRenderer& pa
         settings.mode = static_cast<SimulationMode>(currentMode);
         if (settings.mode == SimulationMode::ParticleCloud3D) {
             particleRenderer.generateParticles(settings);
+        } else if (settings.mode == SimulationMode::QuantumExcitation) {
+            excitationRenderer.ensureInitialized(settings);
         }
     }
     ImGui::Spacing();
@@ -427,7 +431,7 @@ void Gui::renderExcitationControls(SimulationSettings& settings, ExcitationRende
 
     ImGui::SliderFloat("Transition Speed", &settings.transition_speed, 0.1f, 2.0f, "%.2f");
 
-    if (ImGui::Button("Absorb Photon (1s -> 2p) Lyman-alpha")) {
+    if (ImGui::Button("Absorb Lyman-alpha (1s -> 2p, 121nm UV)")) {
         settings.mode = SimulationMode::QuantumExcitation;
         settings.setOrbital(1, 0, 0);
         excitationRenderer.triggerTransition(settings, 2, 1, 0);
@@ -442,9 +446,21 @@ void Gui::renderExcitationControls(SimulationSettings& settings, ExcitationRende
         settings.setOrbital(4, 1, 0);
         excitationRenderer.triggerTransition(settings, 2, 0, 0);
     }
+    if (ImGui::Button("Emit Balmer H-gamma (5p -> 2s, 434nm Blue)")) {
+        settings.mode = SimulationMode::QuantumExcitation;
+        settings.setOrbital(5, 1, 0);
+        excitationRenderer.triggerTransition(settings, 2, 0, 0);
+    }
+    if (ImGui::Button("Emit Paschen-alpha (4d -> 3p, 1875nm IR)")) {
+        settings.mode = SimulationMode::QuantumExcitation;
+        settings.setOrbital(4, 2, 0);
+        excitationRenderer.triggerTransition(settings, 3, 1, 0);
+    }
 
     if (settings.transition_animating) {
-        ImGui::ProgressBar(settings.transition_progress, ImVec2(-1, 0), "Jumping...");
+        ImGui::ProgressBar(settings.transition_progress, ImVec2(-1, 0), "Quantum Jump in Progress...");
+    } else {
+        ImGui::TextDisabled("Status: Atom in stable eigenstate.");
     }
 }
 

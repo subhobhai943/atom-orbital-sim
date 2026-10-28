@@ -16,6 +16,7 @@ public:
     ~ExcitationRenderer();
 
     bool init();
+    void ensureInitialized(SimulationSettings& settings);
     void triggerTransition(SimulationSettings& settings, int target_n, int target_l, int target_m);
     void update(float deltaTime, SimulationSettings& settings);
     void render(const ArcballCamera& camera, const SimulationSettings& settings, int viewportWidth, int viewportHeight);

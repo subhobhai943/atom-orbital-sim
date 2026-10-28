@@ -31,9 +31,9 @@ public:
     void shutdown();
 
 private:
-    void renderMiniHud(SimulationSettings& settings, ParticleRenderer& particleRenderer, GLFWwindow* window, float fps);
+    void renderMiniHud(SimulationSettings& settings, ParticleRenderer& particleRenderer, ExcitationRenderer& excitationRenderer, GLFWwindow* window, float fps);
     void renderHiddenHudOverlay(SimulationSettings& settings, float fps);
-    void renderModeSelection(SimulationSettings& settings, ParticleRenderer& particleRenderer);
+    void renderModeSelection(SimulationSettings& settings, ParticleRenderer& particleRenderer, ExcitationRenderer& excitationRenderer);
     void renderOrbitalControls(SimulationSettings& settings, ParticleRenderer& particleRenderer);
     void renderPresets(SimulationSettings& settings, ParticleRenderer& particleRenderer);
     void renderVisualSettings(SimulationSettings& settings, ParticleRenderer& particleRenderer);

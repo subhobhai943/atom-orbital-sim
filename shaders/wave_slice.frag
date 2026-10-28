@@ -10,6 +10,8 @@ uniform bool uRealOrbitals;
 uniform bool uShowContours;
 uniform bool uShowNodalLines;
 uniform float uBrightness;
+uniform float uPsiMax;
+uniform int uSlicePlane; // 0 = XY (meridional), 1 = YZ (sagittal), 2 = XZ (equatorial)
 
 const float PI = 3.14159265358979323846;
 
@@ -71,20 +73,51 @@ float factorial(int num) {
 }
 
 void main() {
-    // Local pos is (x, z) on horizontal plane Y=0
-    // To see vertical orientation (like pz), let's map: local x -> X, local y -> Y (vertical)
-    vec3 p = vec3(vLocalPos.x, vLocalPos.y, 0.0);
+    // Map local 2D coordinates (u, v) to 3D space according to slice plane
+    vec3 p;
+    if (uSlicePlane == 1) {
+        // YZ sagittal plane
+        p = vec3(0.0, vLocalPos.y, vLocalPos.x);
+    } else if (uSlicePlane == 2) {
+        // XZ equatorial plane
+        p = vec3(vLocalPos.x, 0.0, vLocalPos.y);
+    } else {
+        // Default XY meridional plane (vertical)
+        p = vec3(vLocalPos.x, vLocalPos.y, 0.0);
+    }
+
     float r = length(p);
 
-    if (r < 1e-5) {
-        FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    // Deep space plate background
+    vec3 baseColor = vec3(0.04, 0.05, 0.08);
+
+    // Grid lines every 5 a0 and coordinate axes
+    float gridStep = 5.0;
+    vec2 gridDist = abs(fract(vLocalPos / gridStep + 0.5) - 0.5) * gridStep;
+    float gridLine = smoothstep(0.15, 0.0, min(gridDist.x, gridDist.y));
+    baseColor += vec3(0.05, 0.07, 0.10) * gridLine;
+
+    // Coordinate crosshair axes
+    float axisLine = smoothstep(0.20, 0.0, min(abs(vLocalPos.x), abs(vLocalPos.y)));
+    baseColor += vec3(0.12, 0.16, 0.25) * axisLine;
+
+    // Radial distance circles at 5, 10, 15, 20 a0
+    float rMod = abs(fract(r / 5.0 + 0.5) - 0.5) * 5.0;
+    float rCircle = smoothstep(0.14, 0.0, rMod);
+    baseColor += vec3(0.06, 0.10, 0.15) * rCircle;
+
+    if (r < 1e-4) {
+        // Central nucleus marker
+        FragColor = vec4(1.0, 0.95, 0.85, 1.0);
         return;
     }
 
+    // Spherical coordinates
     float theta = acos(clamp(p.y / r, -1.0, 1.0));
     float phi = atan(p.z, p.x);
     if (phi < 0.0) phi += 2.0 * PI;
 
+    // Radial wavefunction R_nl(r)
     float rho = 2.0 * r / float(uN);
     int k = uN - uL - 1;
     int alpha = 2 * uL + 1;
@@ -94,6 +127,7 @@ void main() {
                 * sqrt(factorial(uN - uL - 1) / (2.0 * float(uN) * factorial(uN + uL)));
     float R = normR * exp(-rho * 0.5) * pow(rho, float(uL)) * L;
 
+    // Angular wavefunction Y_l^m
     int abs_m = abs(uM);
     float Plm = assocLegendre(uL, abs_m, cos(theta));
     float normY = sqrt((float(2 * uL + 1) / (4.0 * PI))
@@ -109,34 +143,42 @@ void main() {
     }
 
     float psi = R * Y;
-    float prob = psi * psi;
 
-    // Base color by quantum phase:
-    // Positive phase = Warm Amber/Red, Negative phase = Cool Electric Cyan
-    vec3 baseColor = vec3(0.0);
-    float intensity = clamp(prob * pow(5.0, float(uN)) * uBrightness, 0.0, 1.0);
+    // Normalized wavefunction magnitude
+    float refScale = max(uPsiMax, 1e-5);
+    float normPsi = clamp(psi / refScale, -2.0, 2.0);
+    float magnitude = abs(normPsi);
+    float val = clamp(pow(magnitude, 0.45) * uBrightness, 0.0, 1.0);
 
-    if (psi >= 0.0) {
-        baseColor = mix(vec3(0.05, 0.0, 0.0), vec3(1.0, 0.35, 0.05), intensity);
+    // Glowing quantum phase coloration:
+    // Positive phase (+): warm glowing Amber / Gold / Orange
+    // Negative phase (-): cool glowing Electric Cyan / Azure
+    vec3 posColor = mix(vec3(0.18, 0.05, 0.02), vec3(1.0, 0.52, 0.10), val);
+    posColor = mix(posColor, vec3(1.0, 0.95, 0.70), pow(val, 2.5));
+
+    vec3 negColor = mix(vec3(0.02, 0.06, 0.18), vec3(0.05, 0.75, 1.0), val);
+    negColor = mix(negColor, vec3(0.80, 0.98, 1.00), pow(val, 2.5));
+
+    if (normPsi >= 0.0) {
+        baseColor = mix(baseColor, posColor, val);
     } else {
-        baseColor = mix(vec3(0.0, 0.02, 0.08), vec3(0.05, 0.70, 1.0), intensity);
+        baseColor = mix(baseColor, negColor, val);
     }
 
     // Nodal line enhancement (where psi == 0)
     if (uShowNodalLines) {
-        float grad = fwidth(psi);
-        float nodeLine = 1.0 - smoothstep(0.0, max(grad * 1.5, 0.0005), abs(psi));
-        baseColor = mix(baseColor, vec3(1.0, 1.0, 1.0), nodeLine * 0.85);
+        float nodeWidth = 0.045;
+        float nodeLine = smoothstep(nodeWidth, 0.0, magnitude);
+        float extentLimit = float(uN * uN) * 2.5 + 8.0;
+        float regionMask = smoothstep(extentLimit, 0.0, r);
+        baseColor = mix(baseColor, vec3(1.0, 0.95, 0.40), nodeLine * regionMask * 0.90);
     }
 
-    // Iso-probability contour rings
+    // Iso-probability contours
     if (uShowContours) {
-        float contourFreq = 15.0;
-        float cVal = fract(sqrt(prob) * contourFreq * 10.0);
-        float line = smoothstep(0.05, 0.0, abs(cVal - 0.5));
-        baseColor += vec3(0.25) * line;
+        float contour = smoothstep(0.08, 0.0, abs(fract(val * 7.0) - 0.5) * 0.5);
+        baseColor += vec3(0.30, 0.35, 0.45) * contour * val;
     }
 
-    float alpha = clamp(intensity * 1.5 + 0.1, 0.1, 0.95);
-    FragColor = vec4(baseColor, alpha);
+    FragColor = vec4(baseColor, 0.98);
 }

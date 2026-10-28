@@ -27,7 +27,37 @@ std::string ExcitationRenderer::getSpectralSeriesName(int n_lower) const {
 bool ExcitationRenderer::init() {
     m_particleShader = std::make_unique<Shader>();
     if (!m_particleShader->loadFromFiles("shaders/particle.vert", "shaders/particle.frag")) {
-        std::cerr << "Particle shader fallback for excitation...\n";
+        const std::string vertSrc = R"(#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec4 aColor;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+uniform float uBaseSize;
+out vec4 vColor;
+void main() {
+    vec4 viewPos = uView * uModel * vec4(aPos, 1.0);
+    gl_Position = uProjection * viewPos;
+    float depth = max(-viewPos.z, 0.1);
+    gl_PointSize = clamp(uBaseSize * (600.0 / depth), 1.5, 64.0);
+    vColor = aColor;
+}
+)";
+        const std::string fragSrc = R"(#version 330 core
+in vec4 vColor;
+uniform float uBrightness;
+out vec4 FragColor;
+void main() {
+    vec2 coord = gl_PointCoord - vec2(0.5);
+    float distSq = dot(coord, coord) * 4.0;
+    if (distSq > 1.0) discard;
+    float falloff = exp(-3.2 * distSq) * (1.0 - distSq);
+    float alpha = clamp(vColor.a * falloff * uBrightness, 0.0, 1.0);
+    vec3 rgb = vColor.rgb * (1.0 + 0.3 * exp(-6.0 * distSq));
+    FragColor = vec4(rgb, alpha);
+}
+)";
+        m_particleShader->loadFromStrings(vertSrc, fragSrc);
     }
 
     m_photonShader = std::make_unique<Shader>();
@@ -76,9 +106,21 @@ void main() {
     return true;
 }
 
-void ExcitationRenderer::triggerTransition(SimulationSettings& settings, int target_n, int target_l, int target_m) {
-    if (settings.transition_animating) return;
+void ExcitationRenderer::ensureInitialized(SimulationSettings& settings) {
+    if (m_particles.empty()) {
+        settings.exc_n1 = 1;
+        settings.exc_l1 = 0;
+        settings.exc_m1 = 0;
+        settings.exc_n2 = 2;
+        settings.exc_l2 = 1;
+        settings.exc_m2 = 0;
+        settings.photon_wavelength = photon_wavelength_nm(settings.exc_n1, settings.exc_n2);
+        settings.photon_color = wavelength_to_rgb(settings.photon_wavelength);
+        rebuildSuperpositionParticles(settings);
+    }
+}
 
+void ExcitationRenderer::triggerTransition(SimulationSettings& settings, int target_n, int target_l, int target_m) {
     settings.exc_n1 = settings.n;
     settings.exc_l1 = settings.l;
     settings.exc_m1 = settings.m;
@@ -142,14 +184,30 @@ void ExcitationRenderer::rebuildSuperpositionParticles(SimulationSettings& setti
         ep.phase_offset = phaseDist(settings.rng);
 
         m_particles.push_back(ep);
+
+        size_t idx = i * 7;
+        m_particleBuffer[idx + 0] = ep.pos1.x;
+        m_particleBuffer[idx + 1] = ep.pos1.y;
+        m_particleBuffer[idx + 2] = ep.pos1.z;
+        m_particleBuffer[idx + 3] = ep.color1.r;
+        m_particleBuffer[idx + 4] = ep.color1.g;
+        m_particleBuffer[idx + 5] = ep.color1.b;
+        m_particleBuffer[idx + 6] = ep.color1.a;
     }
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_particleVbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, m_particleBuffer.size() * sizeof(float), m_particleBuffer.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void ExcitationRenderer::update(float deltaTime, SimulationSettings& settings) {
     m_animTime += deltaTime;
 
+    if (m_particles.empty()) {
+        ensureInitialized(settings);
+    }
+
     if (!settings.transition_animating) {
-        // Idle superposition update if needed
         return;
     }
 
@@ -185,17 +243,14 @@ void ExcitationRenderer::update(float deltaTime, SimulationSettings& settings) {
 
     // Update superposition particle cloud
     float t = settings.transition_progress;
-    // Smooth cosine interpolation
     float smoothT = 0.5f - 0.5f * std::cos(t * float(M_PI));
 
-    // Quantum Bohr beat frequency oscillation
     float deltaE = static_cast<float>(transition_energy_ev(settings.exc_n1, settings.exc_n2));
     float beatFreq = deltaE * 8.0f;
 
     for (size_t i = 0; i < m_particles.size(); ++i) {
         auto& p = m_particles[i];
 
-        // Quantum superposition mixing with dipole oscillation term
         float dipoleOsc = 0.15f * std::sin(beatFreq * m_animTime + p.phase_offset) * std::sin(smoothT * float(M_PI));
         glm::vec3 base = glm::mix(p.pos1, p.pos2, smoothT);
         p.current_pos = base + glm::vec3(0.0f, dipoleOsc * 2.0f, 0.0f);
@@ -217,7 +272,9 @@ void ExcitationRenderer::update(float deltaTime, SimulationSettings& settings) {
 }
 
 void ExcitationRenderer::render(const ArcballCamera& camera, const SimulationSettings& settings, int viewportWidth, int viewportHeight) {
-    if (m_particles.empty()) return;
+    if (m_particles.empty()) {
+        ensureInitialized(const_cast<SimulationSettings&>(settings));
+    }
 
     glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_BLEND);
@@ -233,9 +290,8 @@ void ExcitationRenderer::render(const ArcballCamera& camera, const SimulationSet
     m_particleShader->setMat4("uModel", model);
     m_particleShader->setMat4("uView", view);
     m_particleShader->setMat4("uProjection", proj);
-    m_particleShader->setFloat("uBaseSize", settings.point_base_size * 1.1f);
-    m_particleShader->setFloat("uBrightness", settings.brightness * 1.2f);
-    m_particleShader->setBool("uEnableClip", false);
+    m_particleShader->setFloat("uBaseSize", settings.point_base_size * 1.2f);
+    m_particleShader->setFloat("uBrightness", settings.brightness * 1.5f);
 
     glBindVertexArray(m_particleVao);
     glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(m_particles.size()));
@@ -253,9 +309,8 @@ void ExcitationRenderer::render(const ArcballCamera& camera, const SimulationSet
 void ExcitationRenderer::renderPhotonWavepacket(const ArcballCamera& camera, const SimulationSettings& settings) {
     if (!m_photonShader) return;
 
-    // Build an oscillating electromagnetic wavepacket (sinusoidal with Gaussian envelope)
     const int segments = 120;
-    std::vector<float> lineData; // pos(3), col(4)
+    std::vector<float> lineData;
     lineData.reserve(segments * 7);
 
     float packetLength = 14.0f;
@@ -266,7 +321,6 @@ void ExcitationRenderer::renderPhotonWavepacket(const ArcballCamera& camera, con
         float s = (float(i) / float(segments - 1) - 0.5f) * packetLength;
         float x = m_photonX + s;
 
-        // Gaussian envelope * sine wave
         float envelope = std::exp(-(s * s) / (2.0f * sigma * sigma));
         float y = 2.2f * envelope * std::sin(k_wavenumber * s - m_animTime * 15.0f);
         float z = 0.0f;

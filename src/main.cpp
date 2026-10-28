@@ -17,6 +17,7 @@
 static orbital::ArcballCamera* g_camera = nullptr;
 static orbital::SimulationSettings* g_settings = nullptr;
 static orbital::ParticleRenderer* g_particleRenderer = nullptr;
+static orbital::ExcitationRenderer* g_excitationRenderer = nullptr;
 static int g_windowWidth = 1280;
 static int g_windowHeight = 800;
 static bool g_isFullscreen = false;
@@ -97,8 +98,10 @@ static void keyCallback(GLFWwindow* window, int key, int /*scancode*/, int actio
             g_settings->mode = orbital::SimulationMode::VolumetricRaymarch;
         } else if (key == GLFW_KEY_3 && g_settings) {
             g_settings->mode = orbital::SimulationMode::QuantumExcitation;
+            if (g_excitationRenderer) g_excitationRenderer->ensureInitialized(*g_settings);
         } else if (key == GLFW_KEY_4 && g_settings) {
             g_settings->mode = orbital::SimulationMode::WaveSlice2D;
+            if (g_camera) { g_camera->azimuth = 0.0f; g_camera->elevation = float(M_PI) / 2.0f; }
         } else if (key == GLFW_KEY_5 && g_settings) {
             g_settings->mode = orbital::SimulationMode::BohrVsQuantum;
         }
@@ -169,6 +172,7 @@ int main(int argc, char** argv) {
     g_camera = &camera;
     g_settings = &settings;
     g_particleRenderer = &particleRenderer;
+    g_excitationRenderer = &excitationRenderer;
 
     if (!particleRenderer.init()) {
         std::cerr << "Failed to initialize ParticleRenderer!\n";
@@ -189,9 +193,10 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to initialize GUI!\n";
     }
 
-    // Generate initial orbital (2p_z dumbbell)
+    // Initialize default states
     settings.setOrbital(2, 1, 0);
     particleRenderer.generateParticles(settings);
+    excitationRenderer.ensureInitialized(settings);
 
     auto lastTime = std::chrono::high_resolution_clock::now();
     float fps = 60.0f;

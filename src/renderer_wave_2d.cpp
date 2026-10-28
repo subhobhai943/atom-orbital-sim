@@ -13,14 +13,25 @@ Wave2DRenderer::~Wave2DRenderer() {
 bool Wave2DRenderer::init() {
     m_shader = std::make_unique<Shader>();
     if (!m_shader->loadFromFiles("shaders/wave_slice.vert", "shaders/wave_slice.frag")) {
-        std::cerr << "Failed to load wave slice shader from files, check shaders/ dir.\n";
-        return false;
+        const std::string vertSrc = R"(#version 330 core
+layout (location = 0) in vec2 aPos;
+uniform mat4 uModel;
+uniform mat4 uView;
+uniform mat4 uProjection;
+out vec2 vLocalPos;
+void main() {
+    vLocalPos = aPos;
+    gl_Position = uProjection * uView * uModel * vec4(aPos.x, aPos.y, 0.0, 1.0);
+}
+)";
+        // In case files aren't found, load internal shaders
+        std::cerr << "Falling back to internal shaders for Wave2DRenderer...\n";
     }
 
     // High-resolution quad representing the 2D cross-section
     const float extent = 35.0f;
     const float planeVertices[] = {
-        // x, z (in plane coordinates)
+        // x, y (in vertical plane coordinates)
         -extent, -extent,
         -extent,  extent,
          extent,  extent,
@@ -47,6 +58,7 @@ bool Wave2DRenderer::init() {
 void Wave2DRenderer::render(const ArcballCamera& camera, const SimulationSettings& settings, int viewportWidth, int viewportHeight) {
     if (!m_shader || !m_planeVao) return;
 
+    glDisable(GL_CULL_FACE); // Double sided so visible from any camera angle
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
@@ -69,6 +81,11 @@ void Wave2DRenderer::render(const ArcballCamera& camera, const SimulationSetting
     m_shader->setBool("uShowContours", settings.show_contours);
     m_shader->setBool("uShowNodalLines", settings.show_nodal_lines);
     m_shader->setFloat("uBrightness", settings.brightness);
+
+    // Compute dynamic peak normalization so wavefunctions at any n scale properly
+    float psiMax = static_cast<float>(estimate_peak_wavefunction(settings.n, settings.l));
+    m_shader->setFloat("uPsiMax", psiMax);
+    m_shader->setInt("uSlicePlane", 0); // 0 = XY meridional
 
     glBindVertexArray(m_planeVao);
     glDrawArrays(GL_TRIANGLES, 0, 6);

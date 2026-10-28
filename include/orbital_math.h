@@ -247,6 +247,22 @@ inline double probability_density(double r, double theta, double phi, int n, int
     }
 }
 
+/// Estimate the maximum peak wavefunction amplitude for a given (n, l)
+/// used for dynamic normalization in 2D cross-sections and volumetric rendering.
+inline double estimate_peak_wavefunction(int n, int l, double a0 = BOHR_RADIUS_A0) {
+    double max_R = 0.0;
+    double r_extent = std::max(10.0, 3.5 * n * n * a0);
+    const int samples = 250;
+    double dr = r_extent / samples;
+    for (int i = 0; i <= samples; ++i) {
+        double r = i * dr;
+        double R = std::abs(radial_wavefunction(r, n, l, a0));
+        if (R > max_R) max_R = R;
+    }
+    // Multiply by typical spherical harmonic magnitude (~0.4 - 0.6)
+    return std::max(max_R * 0.48, 1e-4);
+}
+
 // =============================================================================
 // Coordinate Transformations
 // =============================================================================

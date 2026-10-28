@@ -10,5 +10,6 @@ out vec2 vLocalPos;
 
 void main() {
     vLocalPos = aPos;
-    gl_Position = uProjection * uView * uModel * vec4(aPos.x, 0.0, aPos.y, 1.0);
+    // Render as vertical billboard in XY plane
+    gl_Position = uProjection * uView * uModel * vec4(aPos.x, aPos.y, 0.0, 1.0);
 }
