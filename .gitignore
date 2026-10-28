@@ -1,0 +1,11 @@
+# Build directories
+build/
+bin/atom_*
+bin/launcher
+bin/test_orbital_math
+bin/wave_atom_2d
+bin/shaders/
+*.o
+*.a
+*.so
+.DS_Store
