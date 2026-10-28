@@ -130,7 +130,9 @@ atom-orbital-sim/
 
 ## Building & Running
 
-### Prerequisites (Ubuntu / Debian)
+> **Windows & macOS Users**: See the dedicated [Cross-Platform Build & Run Guide](CROSS_PLATFORM_GUIDE.md) for detailed instructions on Windows (Visual Studio / MSVC / vcpkg / MinGW) and macOS (Homebrew / Apple Silicon & Intel).
+
+### Quick Linux Instructions (Ubuntu / Debian / Mint)
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake libglfw3-dev libglm-dev libglew-dev libgl1-mesa-dev
@@ -202,3 +204,10 @@ You can also run any standalone focused mode directly:
 - Original repository: [kavan010/Atoms](https://github.com/kavan010/Atoms)
 - Griffiths, David J. *Introduction to Quantum Mechanics* (Pearson Prentice Hall).
 - Cohen-Tannoudji, Claude et al. *Quantum Mechanics, Volume 1 & 2* (Wiley).
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE) - Copyright (c) 2026 subhobhai943.
+
