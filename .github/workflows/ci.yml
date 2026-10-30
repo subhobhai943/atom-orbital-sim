@@ -15,23 +15,16 @@ jobs:
   build-and-test:
     name: Test (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.allow_failure || false }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: linux-x86_64
             os: ubuntu-22.04
-            allow_failure: false
           - target: windows-x64
             os: windows-latest
-            allow_failure: false
           - target: macos-arm64
             os: macos-latest
-            allow_failure: false
-          - target: macos-x86_64
-            os: macos-13
-            allow_failure: true
 
     steps:
       - name: Checkout repository

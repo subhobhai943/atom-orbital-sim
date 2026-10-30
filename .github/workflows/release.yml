@@ -34,23 +34,16 @@ jobs:
   build:
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.allow_failure || false }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: linux-x86_64
             os: ubuntu-22.04
-            allow_failure: false
           - target: windows-x64
             os: windows-latest
-            allow_failure: false
           - target: macos-arm64
             os: macos-latest
-            allow_failure: false
-          - target: macos-x86_64
-            os: macos-13
-            allow_failure: true
 
     steps:
       - name: Checkout repository
@@ -352,7 +345,6 @@ jobs:
             - **Linux (x86_64)**: `atom-orbital-sim-linux-x86_64.tar.gz`
             - **Windows (x64)**: `atom-orbital-sim-windows-x64.zip`
             - **macOS (Apple Silicon - arm64)**: `atom-orbital-sim-macos-arm64.tar.gz`
-            - **macOS (Intel - x86_64)**: `atom-orbital-sim-macos-x86_64.tar.gz` *(if runner available)*
 
             ### Package Contents
             Each archive contains the complete standalone application suite:
