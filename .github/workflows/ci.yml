@@ -1,0 +1,140 @@
+name: CI - Multi-Platform Build & Test
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Test (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-22.04
+            allow_failure: false
+          - target: windows-x64
+            os: windows-latest
+            allow_failure: false
+          - target: macos-arm64
+            os: macos-latest
+            allow_failure: false
+          - target: macos-x86_64
+            os: macos-13
+            allow_failure: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # -----------------------------------------------------------------------
+      # Linux Build & Test
+      # -----------------------------------------------------------------------
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libglfw3-dev \
+            libglm-dev \
+            libglew-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            xorg-dev
+
+      - name: Configure CMake (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Run Unit Tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./bin/test_orbital_math
+
+      # -----------------------------------------------------------------------
+      # macOS Build & Test
+      # -----------------------------------------------------------------------
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake glfw glew glm
+
+      - name: Configure CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+
+      - name: Run Unit Tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          ./bin/test_orbital_math
+
+      # -----------------------------------------------------------------------
+      # Windows Build & Test
+      # -----------------------------------------------------------------------
+      - name: Cache vcpkg dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('CMakeLists.txt') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
+
+      - name: Install dependencies (Windows via vcpkg)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install glfw3:x64-windows glew:x64-windows glm:x64-windows
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { "C:\vcpkg" }
+          cmake -B build -S . `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_TOOLCHAIN_FILE="$vcpkgRoot/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Run Unit Tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "bin\Release\test_orbital_math.exe") {
+            .\bin\Release\test_orbital_math.exe
+          } elseif (Test-Path "bin\test_orbital_math.exe") {
+            .\bin\test_orbital_math.exe
+          } else {
+            Write-Error "test_orbital_math.exe not found"
+          }

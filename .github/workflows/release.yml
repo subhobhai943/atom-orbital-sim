@@ -1,0 +1,378 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: false
+        type: string
+        default: ''
+      release_title:
+        description: 'Release Title (optional, defaults to "Atom Orbital Simulator <tag>")'
+        required: false
+        type: string
+        default: ''
+      draft:
+        description: 'Create draft release'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-22.04
+            allow_failure: false
+          - target: windows-x64
+            os: windows-latest
+            allow_failure: false
+          - target: macos-arm64
+            os: macos-latest
+            allow_failure: false
+          - target: macos-x86_64
+            os: macos-13
+            allow_failure: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # -----------------------------------------------------------------------
+      # Linux Setup & Build
+      # -----------------------------------------------------------------------
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libglfw3-dev \
+            libglm-dev \
+            libglew-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            xorg-dev
+
+      - name: Configure CMake (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Run Unit Tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./bin/test_orbital_math
+
+      - name: Package Release (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          PKG_NAME="atom-orbital-sim-${{ matrix.target }}"
+          mkdir -p "$PKG_NAME"
+
+          # Copy executables
+          cp bin/atom_orbital_sim "$PKG_NAME/"
+          cp bin/atom_realtime "$PKG_NAME/"
+          cp bin/atom_raytracer "$PKG_NAME/"
+          cp bin/atom_excitation "$PKG_NAME/"
+          cp bin/wave_atom_2d "$PKG_NAME/"
+          cp bin/atom_bohr "$PKG_NAME/"
+          cp bin/launcher "$PKG_NAME/"
+          cp bin/test_orbital_math "$PKG_NAME/"
+          chmod +x "$PKG_NAME"/atom_* "$PKG_NAME"/wave_atom_2d "$PKG_NAME"/launcher "$PKG_NAME"/test_orbital_math
+
+          # Copy assets and documentation
+          cp -r shaders "$PKG_NAME/"
+          cp README.md LICENSE CROSS_PLATFORM_GUIDE.md "$PKG_NAME/"
+          [ -f imgui.ini ] && cp imgui.ini "$PKG_NAME/"
+
+          # Archive & Checksum
+          tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
+          sha256sum "${PKG_NAME}.tar.gz" > "${PKG_NAME}.tar.gz.sha256"
+
+      # -----------------------------------------------------------------------
+      # macOS Setup & Build
+      # -----------------------------------------------------------------------
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake glfw glew glm
+
+      - name: Configure CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+
+      - name: Run Unit Tests (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          ./bin/test_orbital_math
+
+      - name: Package Release (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          PKG_NAME="atom-orbital-sim-${{ matrix.target }}"
+          mkdir -p "$PKG_NAME"
+
+          # Copy executables
+          cp bin/atom_orbital_sim "$PKG_NAME/"
+          cp bin/atom_realtime "$PKG_NAME/"
+          cp bin/atom_raytracer "$PKG_NAME/"
+          cp bin/atom_excitation "$PKG_NAME/"
+          cp bin/wave_atom_2d "$PKG_NAME/"
+          cp bin/atom_bohr "$PKG_NAME/"
+          cp bin/launcher "$PKG_NAME/"
+          cp bin/test_orbital_math "$PKG_NAME/"
+          chmod +x "$PKG_NAME"/atom_* "$PKG_NAME"/wave_atom_2d "$PKG_NAME"/launcher "$PKG_NAME"/test_orbital_math
+
+          # Copy assets and documentation
+          cp -r shaders "$PKG_NAME/"
+          cp README.md LICENSE CROSS_PLATFORM_GUIDE.md "$PKG_NAME/"
+          [ -f imgui.ini ] && cp imgui.ini "$PKG_NAME/"
+
+          # Archive & Checksum
+          tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
+          shasum -a 256 "${PKG_NAME}.tar.gz" > "${PKG_NAME}.tar.gz.sha256"
+
+      # -----------------------------------------------------------------------
+      # Windows Setup & Build
+      # -----------------------------------------------------------------------
+      - name: Cache vcpkg dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: ${{ runner.os }}-vcpkg-${{ hashFiles('CMakeLists.txt') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-
+
+      - name: Install dependencies (Windows via vcpkg)
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install glfw3:x64-windows glew:x64-windows glm:x64-windows
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { "C:\vcpkg" }
+          cmake -B build -S . `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DCMAKE_TOOLCHAIN_FILE="$vcpkgRoot/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Run Unit Tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "bin\Release\test_orbital_math.exe") {
+            .\bin\Release\test_orbital_math.exe
+          } elseif (Test-Path "bin\test_orbital_math.exe") {
+            .\bin\test_orbital_math.exe
+          } else {
+            Write-Error "test_orbital_math.exe not found"
+          }
+
+      - name: Package Release (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pkgName = "atom-orbital-sim-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path $pkgName
+
+          # Locate executables directory
+          if (Test-Path "bin\Release\atom_orbital_sim.exe") {
+            $binDir = "bin\Release"
+          } elseif (Test-Path "bin\atom_orbital_sim.exe") {
+            $binDir = "bin"
+          } else {
+            $binDir = "build\bin\Release"
+          }
+          Write-Host "Locating executables in: $binDir"
+
+          # Copy executables
+          Copy-Item "$binDir\atom_orbital_sim.exe" -Destination $pkgName
+          Copy-Item "$binDir\atom_realtime.exe" -Destination $pkgName
+          Copy-Item "$binDir\atom_raytracer.exe" -Destination $pkgName
+          Copy-Item "$binDir\atom_excitation.exe" -Destination $pkgName
+          Copy-Item "$binDir\wave_atom_2d.exe" -Destination $pkgName
+          Copy-Item "$binDir\atom_bohr.exe" -Destination $pkgName
+          Copy-Item "$binDir\launcher.exe" -Destination $pkgName
+          if (Test-Path "$binDir\test_orbital_math.exe") {
+            Copy-Item "$binDir\test_orbital_math.exe" -Destination $pkgName
+          }
+
+          # Copy DLLs from binary directory
+          Get-ChildItem -Path $binDir -Filter "*.dll" -ErrorAction SilentlyContinue | Copy-Item -Destination $pkgName
+
+          # Copy DLLs from vcpkg installed directory if not already present
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { "C:\vcpkg" }
+          $vcpkgBin = "$vcpkgRoot\installed\x64-windows\bin"
+          if (Test-Path $vcpkgBin) {
+            Get-ChildItem -Path $vcpkgBin -Filter "*.dll" | ForEach-Object {
+              $dest = Join-Path $pkgName $_.Name
+              if (-not (Test-Path $dest)) {
+                Copy-Item $_.FullName -Destination $pkgName
+              }
+            }
+          }
+
+          # Copy shaders and documentation
+          Copy-Item -Recurse shaders -Destination (Join-Path $pkgName "shaders")
+          Copy-Item README.md, LICENSE, CROSS_PLATFORM_GUIDE.md -Destination $pkgName
+          if (Test-Path "imgui.ini") {
+            Copy-Item "imgui.ini" -Destination $pkgName
+          }
+
+          # Archive & Checksum
+          $zipName = "$pkgName.zip"
+          Compress-Archive -Path $pkgName -DestinationPath $zipName -Force
+
+          $hash = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zipName" | Out-File -FilePath "$zipName.sha256" -Encoding ascii
+
+      # -----------------------------------------------------------------------
+      # Upload Artifacts
+      # -----------------------------------------------------------------------
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            atom-orbital-sim-${{ matrix.target }}.tar.gz
+            atom-orbital-sim-${{ matrix.target }}.tar.gz.sha256
+            atom-orbital-sim-${{ matrix.target }}.zip
+            atom-orbital-sim-${{ matrix.target }}.zip.sha256
+          retention-days: 1
+
+  # ===========================================================================
+  # Release Job: Collate artifacts and publish GitHub Release
+  # ===========================================================================
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Determine Release Tag & Title
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag_name }}" ]; then
+            TAG="${{ inputs.tag_name }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v1.0.0-build.${{ github.run_number }}"
+          fi
+
+          if [ -n "${{ inputs.release_title }}" ]; then
+            TITLE="${{ inputs.release_title }}"
+          else
+            TITLE="Atom Orbital Simulator $TAG"
+          fi
+
+          echo "tag_name=$TAG" >> $GITHUB_OUTPUT
+          echo "release_title=$TITLE" >> $GITHUB_OUTPUT
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release-assets
+          cp release-artifacts/*.tar.gz release-assets/ 2>/dev/null || true
+          cp release-artifacts/*.zip release-assets/ 2>/dev/null || true
+          cp release-artifacts/*.sha256 release-assets/ 2>/dev/null || true
+
+          # Create unified SHA256SUMS.txt
+          cat release-assets/*.sha256 > release-assets/SHA256SUMS.txt 2>/dev/null || true
+
+          echo "Files prepared for release:"
+          ls -la release-assets/
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: ${{ steps.tag.outputs.release_title }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ inputs.prerelease || false }}
+          generate_release_notes: true
+          body: |
+            ## Quantum Hydrogen Atom & Orbital Simulator - ${{ steps.tag.outputs.tag_name }}
+
+            Interactive 3D quantum mechanical atom and electron orbital simulation written in modern C++ (C++17) and OpenGL 3.3 Core.
+
+            ### Pre-compiled Release Packages
+            - **Linux (x86_64)**: `atom-orbital-sim-linux-x86_64.tar.gz`
+            - **Windows (x64)**: `atom-orbital-sim-windows-x64.zip`
+            - **macOS (Apple Silicon - arm64)**: `atom-orbital-sim-macos-arm64.tar.gz`
+            - **macOS (Intel - x86_64)**: `atom-orbital-sim-macos-x86_64.tar.gz` *(if runner available)*
+
+            ### Package Contents
+            Each archive contains the complete standalone application suite:
+            - `atom_orbital_sim` - Unified master interactive simulator with Dear ImGui dashboard
+            - `atom_realtime` - Standalone 3D Monte Carlo probability cloud visualizer
+            - `atom_raytracer` - Standalone GPU volumetric wavefunction raymarcher
+            - `atom_excitation` - Standalone Bohr jump & spectral photon transition simulator
+            - `wave_atom_2d` - Standalone 2D wavefunction cross-section & nodal contour visualizer
+            - `atom_bohr` - Standalone 3D Bohr planetary model & de Broglie matter wave visualizer
+            - `launcher` - Interactive terminal mode selector
+            - `test_orbital_math` - Quantum mathematical validation test suite
+            - `shaders/` - Core GLSL shaders (particle, raymarch, photon, nucleus, wave slice, bohr)
+            - *(Windows)* Bundled `glfw3.dll` & `glew32.dll` runtime libraries
+
+            ### Quick Start
+            1. Download the archive matching your operating system.
+            2. Extract the archive.
+            3. Run `atom_orbital_sim` (or `atom_orbital_sim.exe` on Windows).
+            4. Press **`TAB`** or **`H`** to toggle the UI HUD, **`F11`** for borderless fullscreen mode.
+
+            Refer to [CROSS_PLATFORM_GUIDE.md](https://github.com/${{ github.repository }}/blob/main/CROSS_PLATFORM_GUIDE.md) for detailed platform requirements and FAQs.
+          files: |
+            release-assets/*
