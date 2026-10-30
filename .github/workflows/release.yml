@@ -365,6 +365,6 @@ jobs:
             3. Run `atom_orbital_sim` (or `atom_orbital_sim.exe` on Windows).
             4. Press **`TAB`** or **`H`** to toggle the UI HUD, **`F11`** for borderless fullscreen mode.
 
-            Refer to [CROSS_PLATFORM_GUIDE.md](https://github.com/${{ github.repository }}/blob/main/CROSS_PLATFORM_GUIDE.md) for detailed platform requirements and FAQs.
+            Refer to [CROSS_PLATFORM_GUIDE.md](https://github.com/${{ github.repository }}/blob/master/CROSS_PLATFORM_GUIDE.md) for detailed platform requirements and FAQs.
           files: |
             release-assets/*

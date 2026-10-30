@@ -3,11 +3,9 @@ name: CI - Multi-Platform Build & Test
 on:
   push:
     branches:
-      - main
       - master
   pull_request:
     branches:
-      - main
       - master
   workflow_dispatch:
 
